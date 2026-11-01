@@ -899,7 +899,9 @@ export default function DiscoverPage() {
 
   const handleLogEntirePlate = async () => {
     if (plateSummary.entries.length === 0) return;
-    for (const e of plateSummary.entries) {
+
+    if (plateSummary.entries.length === 1) {
+      const e = plateSummary.entries[0];
       await saveFoodLogEntry({
         id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         userId: "default_user",
@@ -913,9 +915,50 @@ export default function DiscoverPage() {
         loggedAt: localDateIso(),
         createdAt: new Date().toISOString(),
       });
+      flash(`🎉 Logged ${e.food.name} to ${targetMeal}!`);
+    } else {
+      const subLogEntries: FoodLogEntry[] = plateSummary.entries.map((e) => ({
+        id: `sub_${e.food.id}`,
+        userId: "default_user",
+        foodId: e.food.id,
+        foodNameSnapshot: e.food.name,
+        servingQuantity: e.qty,
+        servingUnit: e.unit,
+        nutritionSnapshot: e.nutrients,
+        mealType: targetMeal,
+        entrySource: "recommendation",
+        loggedAt: localDateIso(),
+        createdAt: new Date().toISOString(),
+      }));
+
+      const { totals } = aggregateDailyNutrients(subLogEntries);
+      const plateName =
+        plateSummary.entries.map((e) => e.food.name).slice(0, 3).join(" + ") +
+        (plateSummary.entries.length > 3 ? ` + ${plateSummary.entries.length - 3} more` : " Plate");
+
+      await saveFoodLogEntry({
+        id: `log_combo_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        userId: "default_user",
+        foodId: null,
+        foodNameSnapshot: plateName,
+        servingQuantity: 1,
+        servingUnit: "serving",
+        nutritionSnapshot: totals,
+        mealType: targetMeal,
+        entrySource: "combination",
+        combinationName: plateName,
+        itemsSnapshot: plateSummary.entries.map((e) => ({
+          foodName: e.food.name,
+          servingQuantity: e.qty,
+          servingUnit: e.unit,
+        })),
+        loggedAt: localDateIso(),
+        createdAt: new Date().toISOString(),
+      });
+      flash(`🎉 Logged combo plate (${plateSummary.count} items, +${plateSummary.protein}g protein) to ${targetMeal}!`);
     }
+
     setPlateCart({});
-    flash(`🎉 Logged ${plateSummary.count} items (+${plateSummary.protein}g protein) to ${targetMeal}!`);
     await load();
   };
 

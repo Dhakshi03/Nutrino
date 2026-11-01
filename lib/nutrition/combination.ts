@@ -1,8 +1,14 @@
 import { Food, FoodCombination, FoodLogEntry, MealType } from "./types";
-import { createNutritionSnapshot } from "./calculator";
+import { aggregateDailyNutrients, createNutritionSnapshot } from "./calculator";
 
 export interface CombinationExpansion {
   entries: FoodLogEntry[];
+  /** Names of items whose source food no longer exists (skipped, never zero-filled). */
+  missingFoods: string[];
+}
+
+export interface CombinationSingleLogResult {
+  entry: FoodLogEntry | null;
   /** Names of items whose source food no longer exists (skipped, never zero-filled). */
   missingFoods: string[];
 }
@@ -49,6 +55,55 @@ export function expandCombinationToEntries(
     });
   }
   return { entries, missingFoods };
+}
+
+/**
+ * Creates a single consolidated FoodLogEntry for the entire combination,
+ * aggregating all constituent ingredients into a unified meal log entry.
+ */
+export function createCombinationLogEntry(
+  combo: FoodCombination,
+  foods: Food[],
+  mealType: MealType,
+  dateIso: string,
+  userId = "default_user"
+): CombinationSingleLogResult {
+  const { entries: subEntries, missingFoods } = expandCombinationToEntries(
+    combo,
+    foods,
+    mealType,
+    dateIso,
+    userId
+  );
+
+  if (subEntries.length === 0) {
+    return { entry: null, missingFoods };
+  }
+
+  const { totals } = aggregateDailyNutrients(subEntries);
+
+  const entry: FoodLogEntry = {
+    id: uid("log_combo"),
+    userId,
+    foodId: null,
+    foodNameSnapshot: combo.name,
+    servingQuantity: 1,
+    servingUnit: "serving",
+    nutritionSnapshot: totals,
+    mealType,
+    entrySource: "combination",
+    combinationId: combo.id,
+    combinationName: combo.name,
+    itemsSnapshot: subEntries.map((e) => ({
+      foodName: e.foodNameSnapshot,
+      servingQuantity: e.servingQuantity,
+      servingUnit: e.servingUnit,
+    })),
+    loggedAt: dateIso,
+    createdAt: new Date().toISOString(),
+  };
+
+  return { entry, missingFoods };
 }
 
 /** Local calendar date (YYYY-MM-DD), avoiding the UTC off-by-one of toISOString(). */

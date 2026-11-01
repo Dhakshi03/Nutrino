@@ -66,18 +66,97 @@ export function convertQuantity(
     return quantity / ratio;
   }
 
-  // Pieces / Scoops / Cups <-> Grams
-  if ((targetUnit === "piece" || targetUnit === "scoop" || targetUnit === "cup" || targetUnit === "tbsp") && referenceUnit === "g") {
+  // Pieces / Scoops / Cups / Indian Measures <-> Grams
+  const isIndianMeasure =
+    targetUnit === "piece" ||
+    targetUnit === "scoop" ||
+    targetUnit === "cup" ||
+    targetUnit === "tbsp" ||
+    targetUnit === "tsp" ||
+    targetUnit === "katori" ||
+    targetUnit === "bowl" ||
+    targetUnit === "ladle" ||
+    targetUnit === "glass" ||
+    targetUnit === "roti" ||
+    targetUnit === "idli" ||
+    targetUnit === "dosa" ||
+    targetUnit === "plate" ||
+    targetUnit === "slice" ||
+    targetUnit === "serving";
+
+  if (isIndianMeasure && referenceUnit === "g") {
+    if (targetUnit === "katori" && (density?.katoriGrams || density?.gramsPerUnit)) {
+      return quantity * (density.katoriGrams ?? density.gramsPerUnit!);
+    }
+    if (targetUnit === "bowl" && (density?.bowlGrams || density?.gramsPerUnit)) {
+      return quantity * (density.bowlGrams ?? density.gramsPerUnit! * 1.2);
+    }
+    if (targetUnit === "ladle" && (density?.ladleGrams || density?.gramsPerUnit)) {
+      return quantity * (density.ladleGrams ?? density.gramsPerUnit! * 0.45);
+    }
+    if (targetUnit === "glass" && (density?.glassMl || density?.mlToGramsRatio || density?.gramsPerUnit)) {
+      const ml = density.glassMl ?? 220;
+      return quantity * ml * (density.mlToGramsRatio ?? 1.0);
+    }
+    if (targetUnit === "plate" && density?.gramsPerUnit) {
+      return quantity * density.gramsPerUnit * 2.5;
+    }
+    if (targetUnit === "tsp" && density?.gramsPerUnit) {
+      return quantity * (density.gramsPerUnit > 10 ? 5 : density.gramsPerUnit * 0.1);
+    }
     if (density?.gramsPerUnit) {
-      const multiplier = targetUnit === "piece" || targetUnit === "scoop" ? 1 : (targetUnit === "cup" ? 16 : 1);
+      const multiplier =
+        targetUnit === "cup"
+          ? 16
+          : targetUnit === "bowl"
+          ? 1.5
+          : targetUnit === "plate"
+          ? 2.5
+          : 1;
       return quantity * density.gramsPerUnit * multiplier;
     }
   }
 
-  if (targetUnit === "g" && (referenceUnit === "piece" || referenceUnit === "scoop")) {
+  // Volume conversions with referenceUnit 'ml'
+  if (
+    (targetUnit === "glass" || targetUnit === "katori" || targetUnit === "bowl" || targetUnit === "cup" || targetUnit === "tbsp" || targetUnit === "tsp" || targetUnit === "ladle") &&
+    referenceUnit === "ml"
+  ) {
+    if (targetUnit === "glass") return quantity * (density?.glassMl ?? 220);
+    if (targetUnit === "katori") return quantity * (density?.katoriGrams ?? 150);
+    if (targetUnit === "bowl") return quantity * (density?.bowlGrams ?? 180);
+    if (targetUnit === "cup") return quantity * 200;
+    if (targetUnit === "tbsp") return quantity * 15;
+    if (targetUnit === "tsp") return quantity * 5;
+    if (targetUnit === "ladle") return quantity * (density?.ladleGrams ?? 65);
+  }
+
+  const isDiscreteRef =
+    referenceUnit === "piece" ||
+    referenceUnit === "scoop" ||
+    referenceUnit === "roti" ||
+    referenceUnit === "idli" ||
+    referenceUnit === "dosa" ||
+    referenceUnit === "serving" ||
+    referenceUnit === "slice";
+
+  if (targetUnit === "g" && isDiscreteRef) {
     if (density?.gramsPerUnit && density.gramsPerUnit > 0) {
       return quantity / density.gramsPerUnit;
     }
+  }
+
+  // 1-to-1 conversion among discrete portion units
+  if (
+    isDiscreteRef &&
+    (targetUnit === "piece" ||
+      targetUnit === "roti" ||
+      targetUnit === "idli" ||
+      targetUnit === "dosa" ||
+      targetUnit === "serving" ||
+      targetUnit === "slice")
+  ) {
+    return quantity;
   }
 
   throw new IncompatibleUnitError(foodName, targetUnit, referenceUnit);
@@ -87,23 +166,64 @@ export function convertQuantity(
  * Returns the list of serving units that can be converted cleanly for a given food item.
  */
 export function getAllowedUnitsForFood(
-  food: Pick<Food, "referenceUnit" | "defaultServingUnit" | "densityConversion">
+  food: Pick<Food, "name" | "referenceUnit" | "defaultServingUnit" | "densityConversion" | "category">
 ): ServingUnit[] {
   const units = new Set<ServingUnit>([food.referenceUnit, food.defaultServingUnit]);
   if (food.referenceUnit === "g" || food.referenceUnit === "ml") {
     units.add("g");
     units.add("ml");
   }
-  if (food.referenceUnit === "g" && food.densityConversion?.gramsPerUnit) {
+
+  const d = food.densityConversion;
+  if (d?.gramsPerUnit || d?.katoriGrams || d?.bowlGrams) {
     units.add("piece");
-    units.add("scoop");
+    units.add("serving");
     units.add("cup");
     units.add("tbsp");
+    units.add("katori");
+    units.add("bowl");
   }
+
+  if (d?.ladleGrams) {
+    units.add("ladle");
+  }
+
+  if (d?.glassMl || food.referenceUnit === "ml" || food.category === "Beverages") {
+    units.add("glass");
+  }
+
+  const lowerName = (food.name || "").toLowerCase();
+  if (lowerName.includes("roti") || lowerName.includes("chapati") || lowerName.includes("phulka") || lowerName.includes("paratha")) {
+    units.add("roti");
+    units.add("piece");
+  }
+  if (lowerName.includes("idli")) {
+    units.add("idli");
+    units.add("piece");
+  }
+  if (lowerName.includes("dosa")) {
+    units.add("dosa");
+    units.add("piece");
+  }
+  if (lowerName.includes("bread") || lowerName.includes("toast")) {
+    units.add("slice");
+    units.add("piece");
+  }
+  if (lowerName.includes("biryani") || lowerName.includes("rice") || lowerName.includes("pulao") || lowerName.includes("khichdi")) {
+    units.add("plate");
+    units.add("bowl");
+    units.add("katori");
+  }
+
   if (
-    (food.referenceUnit === "piece" || food.referenceUnit === "scoop") &&
-    food.densityConversion?.gramsPerUnit &&
-    food.densityConversion.gramsPerUnit > 0
+    (food.referenceUnit === "piece" ||
+      food.referenceUnit === "scoop" ||
+      food.referenceUnit === "roti" ||
+      food.referenceUnit === "idli" ||
+      food.referenceUnit === "dosa" ||
+      food.referenceUnit === "serving") &&
+    d?.gramsPerUnit &&
+    d.gramsPerUnit > 0
   ) {
     units.add("g");
   }

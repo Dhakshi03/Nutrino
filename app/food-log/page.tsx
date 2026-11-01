@@ -1,6 +1,6 @@
 "use client";
 
-import { expandCombinationToEntries, localDateIso, shiftDateIso } from "@/lib/nutrition/combination";
+import { createCombinationLogEntry, localDateIso, shiftDateIso } from "@/lib/nutrition/combination";
 
 import { useEffect, useState } from "react";
 import { Navbar } from "@/components/navigation/Navbar";
@@ -205,9 +205,24 @@ export default function FoodLogPage() {
                                 AI Vision
                               </span>
                             )}
+                            {entry.entrySource === "combination" && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                                Combo
+                              </span>
+                            )}
+                            {entry.entrySource === "nlp" && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                ✨ NLP
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-gray-400 mt-0.5">
                             {entry.servingQuantity} {entry.servingUnit}
+                            {entry.itemsSnapshot && entry.itemsSnapshot.length > 0 && (
+                              <span className="text-zinc-500 text-[11px] block mt-0.5">
+                                Includes: {entry.itemsSnapshot.map((i) => `${i.servingQuantity} ${i.servingUnit} ${i.foodName}`).join(", ")}
+                              </span>
+                            )}
                           </p>
                         </div>
 
@@ -368,9 +383,11 @@ export default function FoodLogPage() {
           await loadLogs();
         }}
         onLogCombination={async (combo, meal) => {
-          const { entries } = expandCombinationToEntries(combo, allCatalogFoods, meal, selectedDate);
-          for (const e of entries) await saveFoodLogEntry(e);
-          await loadLogs();
+          const { entry } = createCombinationLogEntry(combo, allCatalogFoods, meal, selectedDate);
+          if (entry) {
+            await saveFoodLogEntry(entry);
+            await loadLogs();
+          }
         }}
         onSaveCustomFood={async (f) => {
           await saveFood(f);

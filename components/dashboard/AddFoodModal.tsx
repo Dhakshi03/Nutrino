@@ -2,7 +2,21 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { X, Search, Plus, Layers, Camera, BookmarkPlus, Sparkles, Loader2 } from "lucide-react";
+import {
+  X,
+  Search,
+  Plus,
+  Minus,
+  Layers,
+  Camera,
+  BookmarkPlus,
+  Sparkles,
+  Loader2,
+  Mic,
+  MicOff,
+  CheckCircle2,
+  Trash2,
+} from "lucide-react";
 import { Food, FoodCombination, FoodLogEntry, MealType, ServingUnit, NutrientValues } from "@/lib/nutrition/types";
 import {
   createNutritionSnapshot,
@@ -11,6 +25,7 @@ import {
 } from "@/lib/nutrition/calculator";
 import { STARTER_FOODS } from "@/lib/nutrition/starter-db";
 import { compressFoodPhoto, requestFoodNutritionEstimate } from "@/lib/nutrition/estimator";
+import { parseNaturalMealDescription, ParsedMealItem, ParsedMealResult } from "@/lib/nutrition/nlp-parser";
 
 interface AddFoodModalProps {
   isOpen: boolean;
@@ -18,6 +33,8 @@ interface AddFoodModalProps {
   foods: Food[];
   combinations: FoodCombination[];
   initialMeal?: MealType;
+  initialTab?: "nlp" | "common" | "saved" | "combinations" | "custom";
+  initialNlpQuery?: string;
   onLogEntry: (entry: Partial<FoodLogEntry>) => void;
   onLogCombination: (combo: FoodCombination, mealType: MealType) => void;
   onSaveCustomFood: (food: Food) => Promise<Food>;
@@ -30,21 +47,158 @@ export function AddFoodModal({
   foods,
   combinations,
   initialMeal,
+  initialTab,
+  initialNlpQuery,
   onLogEntry,
   onLogCombination,
   onSaveCustomFood,
   onOpenAIScan,
 }: AddFoodModalProps) {
-  const [activeTab, setActiveTab] = useState<"common" | "saved" | "combinations" | "custom">("common");
+  const [activeTab, setActiveTab] = useState<"nlp" | "common" | "saved" | "combinations" | "custom">(initialTab || "nlp");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedMeal, setSelectedMeal] = useState<MealType>(initialMeal || "breakfast");
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+
+  // Natural Language input state
+  const [nlpInput, setNlpInput] = useState(initialNlpQuery || "");
+  const [nlpResult, setNlpResult] = useState<ParsedMealResult | null>(null);
+  const [isListening, setIsListening] = useState(false);
 
   useEffect(() => {
     if (initialMeal) {
       setSelectedMeal(initialMeal);
     }
-  }, [initialMeal, isOpen]);
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+    if (initialNlpQuery !== undefined) {
+      setNlpInput(initialNlpQuery);
+    }
+  }, [initialMeal, initialTab, initialNlpQuery, isOpen]);
+
+  useEffect(() => {
+    if (activeTab === "nlp" && nlpInput.trim()) {
+      const res = parseNaturalMealDescription(nlpInput, foods, selectedMeal);
+      setNlpResult(res);
+    } else if (!nlpInput.trim()) {
+      setNlpResult(null);
+    }
+  }, [nlpInput, activeTab, foods, selectedMeal]);
+
+  const calculateTotals = (items: ParsedMealItem[]): NutrientValues => {
+    const total: NutrientValues = {
+      protein: 0,
+      calories: 0,
+      carbohydrates: 0,
+      totalFat: 0,
+      saturatedFat: 0,
+      fibre: 0,
+      sugar: 0,
+      sodium: 0,
+      iron: 0,
+      calcium: 0,
+      zinc: 0,
+      vitB12: 0,
+      vitD: 0,
+      folate: 0,
+      healthyFats: 0,
+    };
+    for (const it of items) {
+      const s = it.nutritionSnapshot;
+      if (s.protein !== null) total.protein = Math.round(((total.protein ?? 0) + s.protein) * 10) / 10;
+      if (s.calories !== null) total.calories = Math.round((total.calories ?? 0) + s.calories);
+      if (s.carbohydrates !== null) total.carbohydrates = Math.round(((total.carbohydrates ?? 0) + s.carbohydrates) * 10) / 10;
+      if (s.totalFat !== null) total.totalFat = Math.round(((total.totalFat ?? 0) + s.totalFat) * 10) / 10;
+      if (s.fibre !== null) total.fibre = Math.round(((total.fibre ?? 0) + s.fibre) * 10) / 10;
+    }
+    return total;
+  };
+
+  const handleUpdateNlpItemQty = (idx: number, delta: number) => {
+    if (!nlpResult) return;
+    const items = [...nlpResult.items];
+    const it = { ...items[idx] };
+    const newQty = Math.max(0.25, Math.round((it.servingQuantity + delta) * 100) / 100);
+    it.servingQuantity = newQty;
+    if (it.matchedFood) {
+      it.nutritionSnapshot = createNutritionSnapshot(it.matchedFood, newQty, it.servingUnit);
+    } else {
+      const factor = newQty / (it.servingQuantity || 1);
+      const prev = it.nutritionSnapshot;
+      it.nutritionSnapshot = {
+        ...prev,
+        protein: prev.protein !== null ? Math.round(prev.protein * factor * 10) / 10 : null,
+        calories: prev.calories !== null ? Math.round(prev.calories * factor) : null,
+        carbohydrates: prev.carbohydrates !== null ? Math.round(prev.carbohydrates * factor * 10) / 10 : null,
+        totalFat: prev.totalFat !== null ? Math.round(prev.totalFat * factor * 10) / 10 : null,
+      };
+    }
+    items[idx] = it;
+    setNlpResult({
+      ...nlpResult,
+      items,
+      totalNutrients: calculateTotals(items),
+    });
+  };
+
+  const handleRemoveNlpItem = (idx: number) => {
+    if (!nlpResult) return;
+    const items = nlpResult.items.filter((_, i) => i !== idx);
+    setNlpResult({
+      ...nlpResult,
+      items,
+      totalNutrients: calculateTotals(items),
+    });
+  };
+
+  const handleLogNlpMeal = () => {
+    if (!nlpResult || nlpResult.items.length === 0) return;
+    const todayIso = new Date().toISOString().split("T")[0];
+    const now = new Date().toISOString();
+
+    for (const it of nlpResult.items) {
+      onLogEntry({
+        foodId: it.matchedFood?.id || null,
+        foodNameSnapshot: it.foodName,
+        servingQuantity: it.servingQuantity,
+        servingUnit: it.servingUnit,
+        nutritionSnapshot: it.nutritionSnapshot,
+        mealType: selectedMeal,
+        entrySource: "nlp",
+        confidence: it.confidence,
+        loggedAt: todayIso,
+        createdAt: now,
+      });
+    }
+
+    setNlpInput("");
+    setNlpResult(null);
+    onClose();
+  };
+
+  const startVoiceDictation = () => {
+    if (typeof window === "undefined") return;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Voice speech recognition is not supported in this browser. Please type your meal description.");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-IN";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    setIsListening(true);
+    recognition.onresult = (event: any) => {
+      const transcript = event.results?.[0]?.[0]?.transcript;
+      if (transcript) {
+        setNlpInput(transcript);
+      }
+      setIsListening(false);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    recognition.start();
+  };
 
   // Selected library item state
   const [selectedFood, setSelectedFood] = useState<Food | null>(null);
@@ -325,6 +479,20 @@ export function AddFoodModal({
             <div className="flex gap-1 flex-wrap">
               <button
                 onClick={() => {
+                  setActiveTab("nlp");
+                  setSelectedFood(null);
+                }}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                  activeTab === "nlp"
+                    ? "bg-[#E50914] text-white shadow-md shadow-[#E50914]/30"
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>Natural Text</span>
+              </button>
+              <button
+                onClick={() => {
                   setActiveTab("common");
                   setSelectedFood(null);
                 }}
@@ -381,6 +549,192 @@ export function AddFoodModal({
           {savedNotice && (
             <div className="px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-xs text-emerald-300 font-medium">
               {savedNotice}
+            </div>
+          )}
+
+          {/* Natural Language Tab */}
+          {activeTab === "nlp" && (
+            <div className="space-y-4 animate-fadeIn">
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-zinc-900 to-zinc-800/80 border border-zinc-700/60 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1 rounded-lg bg-[#E50914]/20 text-[#E50914]">
+                      <Sparkles className="w-4 h-4" />
+                    </span>
+                    <span className="text-xs font-bold text-white">Describe Your Meal</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={startVoiceDictation}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                      isListening
+                        ? "bg-rose-500 text-white animate-pulse"
+                        : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700"
+                    }`}
+                  >
+                    {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5 text-[#E50914]" />}
+                    <span>{isListening ? "Listening..." : "Speak"}</span>
+                  </button>
+                </div>
+
+                <div className="relative">
+                  <textarea
+                    rows={2}
+                    value={nlpInput}
+                    onChange={(e) => setNlpInput(e.target.value)}
+                    placeholder="e.g. 2 idlis and 1 bowl of sambar, or 2 chapatis with paneer curry and 1 glass of buttermilk..."
+                    className="w-full bg-zinc-950/80 border border-zinc-700/80 rounded-xl p-3 text-xs sm:text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-[#E50914] focus:ring-1 focus:ring-[#E50914] resize-none"
+                  />
+                  {nlpInput.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => setNlpInput("")}
+                      className="absolute right-2.5 top-2.5 p-1 rounded-full text-zinc-500 hover:text-zinc-300"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Example Quick Chips */}
+                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                  <span className="text-[10px] text-zinc-400 font-medium">Quick Try:</span>
+                  {[
+                    "2 idlis and 1 bowl of sambar",
+                    "2 chapatis with paneer curry",
+                    "1 medium bowl of white rice, dal tadka and 1 katori curd",
+                    "1 glass of whole milk and 2 bananas",
+                    "1 plate of chicken biryani",
+                  ].map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => setNlpInput(chip)}
+                      className="px-2 py-0.5 rounded-full bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700/60 text-[10px] text-zinc-300 transition-colors"
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Parsed Meal Breakdown Card */}
+              {nlpResult && nlpResult.items.length > 0 && (
+                <div className="space-y-3 p-4 rounded-2xl bg-zinc-900/90 border border-zinc-700/80 animate-fadeIn">
+                  {/* Totals Header */}
+                  <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-white">Parsed Meal Summary</span>
+                        <span
+                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                            nlpResult.overallConfidence === "high"
+                              ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                              : "bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                          }`}
+                        >
+                          {nlpResult.overallConfidence === "high" ? "Catalog Verified" : "Provisional Estimates"}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        Calculated deterministically from structured nutrition data
+                      </p>
+                    </div>
+
+                    <div className="text-right">
+                      <p className="text-sm font-extrabold text-[#E50914]">
+                        {nlpResult.totalNutrients.calories ?? 0} kcal
+                      </p>
+                      <p className="text-xs font-bold text-emerald-400">
+                        {nlpResult.totalNutrients.protein ?? 0}g protein
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Macros Bar */}
+                  <div className="grid grid-cols-4 gap-2 text-center py-2 px-3 rounded-xl bg-black/40 border border-zinc-800/80 text-xs">
+                    <div>
+                      <p className="text-[10px] text-zinc-400">Calories</p>
+                      <p className="font-bold text-white">{nlpResult.totalNutrients.calories ?? 0}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-zinc-400">Protein</p>
+                      <p className="font-bold text-emerald-400">{nlpResult.totalNutrients.protein ?? 0}g</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-zinc-400">Carbs</p>
+                      <p className="font-bold text-amber-400">{nlpResult.totalNutrients.carbohydrates ?? 0}g</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-zinc-400">Fat</p>
+                      <p className="font-bold text-rose-400">{nlpResult.totalNutrients.totalFat ?? 0}g</p>
+                    </div>
+                  </div>
+
+                  {/* Items List */}
+                  <div className="space-y-2">
+                    {nlpResult.items.map((it, idx) => (
+                      <div
+                        key={it.id}
+                        className="p-3 rounded-xl bg-zinc-950/60 border border-zinc-800 flex items-center justify-between gap-3"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-xs text-white truncate">{it.foodName}</span>
+                            {it.isProvisional && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                Provisional
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-zinc-400 mt-0.5">
+                            {it.nutritionSnapshot.protein ?? 0}g protein · {it.nutritionSnapshot.calories ?? 0} kcal
+                          </p>
+                        </div>
+
+                        {/* Portion Modifier */}
+                        <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-700 rounded-lg p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateNlpItemQty(idx, -1)}
+                            className="p-1 rounded text-zinc-400 hover:text-white hover:bg-zinc-800"
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <span className="text-xs font-bold text-white px-1.5 min-w-[28px] text-center">
+                            {it.servingQuantity} {it.servingUnit}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateNlpItemQty(idx, 1)}
+                            className="p-1 rounded text-zinc-400 hover:text-white hover:bg-zinc-800"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveNlpItem(idx)}
+                          className="p-1 text-zinc-500 hover:text-rose-400 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Log Button */}
+                  <button
+                    type="button"
+                    onClick={handleLogNlpMeal}
+                    className="w-full py-2.5 rounded-xl bg-[#E50914] hover:bg-[#f40612] text-white font-bold text-xs shadow-lg shadow-[#E50914]/30 flex items-center justify-center gap-2 active:scale-95 transition-all"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Log All {nlpResult.items.length} Items to {selectedMeal}</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -644,8 +998,19 @@ export function AddFoodModal({
                     <option value="g">g</option>
                     <option value="ml">ml</option>
                     <option value="cup">cup</option>
+                    <option value="katori">katori (small bowl)</option>
+                    <option value="bowl">bowl (medium bowl)</option>
+                    <option value="ladle">ladle</option>
+                    <option value="glass">glass</option>
+                    <option value="roti">roti / chapati</option>
+                    <option value="idli">idli</option>
+                    <option value="dosa">dosa</option>
+                    <option value="plate">plate</option>
+                    <option value="slice">slice</option>
                     <option value="tbsp">tbsp</option>
+                    <option value="tsp">tsp</option>
                     <option value="scoop">scoop</option>
+                    <option value="serving">serving</option>
                   </select>
                 </div>
                 <div>

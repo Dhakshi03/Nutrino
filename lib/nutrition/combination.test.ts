@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { expandCombinationToEntries, localDateIso, shiftDateIso } from "./combination";
+import {
+  createCombinationLogEntry,
+  expandCombinationToEntries,
+  localDateIso,
+  shiftDateIso,
+} from "./combination";
 import { aggregateDailyNutrients } from "./calculator";
 import { STARTER_FOODS } from "./starter-db";
 import { FoodCombination } from "./types";
@@ -30,6 +35,20 @@ describe("combinations", () => {
     const { entries, missingFoods } = expandCombinationToEntries(combo, [STARTER_FOODS.find((f) => f.id === "food_rolled_oats")!], "breakfast", "2026-10-09");
     expect(entries).toHaveLength(1);
     expect(missingFoods).toEqual(["Milk"]);
+  });
+
+  it("creates a single consolidated combo entry with summed nutrients and item snapshots", () => {
+    const { entry, missingFoods } = createCombinationLogEntry(combo, STARTER_FOODS, "breakfast", "2026-10-09");
+    expect(missingFoods).toEqual([]);
+    expect(entry).not.toBeNull();
+    expect(entry?.foodNameSnapshot).toBe("My usual breakfast");
+    expect(entry?.entrySource).toBe("combination");
+    expect(entry?.servingQuantity).toBe(1);
+    expect(entry?.servingUnit).toBe("serving");
+    expect(entry?.nutritionSnapshot.protein).toBe(23.1);
+    expect(entry?.itemsSnapshot).toHaveLength(2);
+    expect(entry?.itemsSnapshot?.[0].foodName).toBe("High-Protein Rolled Oats");
+    expect(entry?.itemsSnapshot?.[1].foodName).toBe("Whole Milk");
   });
 });
 

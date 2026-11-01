@@ -17,7 +17,7 @@ import {
   createNutritionSnapshot,
   getAllowedUnitsForFood,
 } from "@/lib/nutrition/calculator";
-import { expandCombinationToEntries, localDateIso } from "@/lib/nutrition/combination";
+import { createCombinationLogEntry, localDateIso } from "@/lib/nutrition/combination";
 import {
   deleteCombination,
   deleteFood,
@@ -596,13 +596,15 @@ export default function MyFoodsPage() {
   };
 
   const logCombo = async (c: FoodCombination) => {
-    const { entries, missingFoods } = expandCombinationToEntries(c, allCatalogFoods, "breakfast", localDateIso());
-    for (const e of entries) await saveFoodLogEntry(e);
-    flash(
-      missingFoods.length
-        ? `Logged ${entries.length} items. Skipped missing: ${missingFoods.join(", ")}.`
-        : `Logged "${c.name}" to breakfast.`
-    );
+    const { entry, missingFoods } = createCombinationLogEntry(c, allCatalogFoods, "breakfast", localDateIso());
+    if (entry) {
+      await saveFoodLogEntry(entry);
+      flash(
+        missingFoods.length
+          ? `Logged combo "${c.name}". Skipped missing: ${missingFoods.join(", ")}.`
+          : `Logged combo "${c.name}" to breakfast.`
+      );
+    }
   };
 
   const setField = (k: keyof FormState, v: any) => setForm((p) => (p ? { ...p, [k]: v } : p));
@@ -1431,9 +1433,11 @@ export default function MyFoodsPage() {
           flash("Logged.");
         }}
         onLogCombination={async (c, meal) => {
-          const { entries } = expandCombinationToEntries(c, allCatalogFoods, meal, localDateIso());
-          for (const en of entries) await saveFoodLogEntry(en);
-          flash("Logged.");
+          const { entry } = createCombinationLogEntry(c, allCatalogFoods, meal, localDateIso());
+          if (entry) {
+            await saveFoodLogEntry(entry);
+            flash(`Logged combo "${c.name}".`);
+          }
         }}
         onSaveCustomFood={async (f) => { await saveFood(f); await load(); return f; }}
         onOpenAIScan={() => setScanOpen(true)}

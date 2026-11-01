@@ -25,7 +25,18 @@ const UNIT_GRAM_APPROX: Record<ServingUnit, number> = {
   piece: 85,
   cup: 200,
   tbsp: 15,
+  tsp: 5,
   scoop: 30,
+  serving: 100,
+  katori: 150,
+  bowl: 180,
+  ladle: 65,
+  glass: 220,
+  roti: 35,
+  idli: 50,
+  dosa: 80,
+  plate: 250,
+  slice: 30,
 };
 
 interface DishArchetype {

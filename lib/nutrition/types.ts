@@ -1,4 +1,21 @@
-export type ServingUnit = "g" | "ml" | "piece" | "cup" | "tbsp" | "scoop";
+export type ServingUnit =
+  | "g"
+  | "ml"
+  | "piece"
+  | "cup"
+  | "tbsp"
+  | "tsp"
+  | "scoop"
+  | "serving"
+  | "katori"
+  | "bowl"
+  | "ladle"
+  | "glass"
+  | "roti"
+  | "idli"
+  | "dosa"
+  | "plate"
+  | "slice";
 
 export type ReferenceServingType = "per_100g" | "per_100ml" | "per_serving";
 
@@ -62,7 +79,11 @@ export interface NutrientValues {
 
 export interface DensityConversion {
   mlToGramsRatio?: number;    // e.g., 1.03 for milk, 0.92 for oil
-  gramsPerUnit?: number;      // e.g., 50g per 1 egg, 30g per 1 scoop
+  gramsPerUnit?: number;      // e.g., 50g per 1 egg, 30g per 1 scoop, 35g per roti
+  katoriGrams?: number;       // e.g., 150g for dal/sambar, 100g for dahi
+  bowlGrams?: number;         // e.g., 180g for cooked rice/curry
+  ladleGrams?: number;        // e.g., 65g for sambar/dal
+  glassMl?: number;           // e.g., 220ml for buttermilk/chaas
 }
 
 export interface Food {
@@ -87,6 +108,16 @@ export interface Food {
   updatedAt: string;
 }
 
+export interface FoodServing {
+  id: string;
+  foodId: string;
+  unitName: ServingUnit | string;
+  gramEquivalent: number;
+  description?: string;
+}
+
+export type EntrySource = "manual" | "saved_food" | "combination" | "photo" | "recommendation" | "nlp";
+
 export interface FoodLogEntry {
   id: string;
   userId: string;
@@ -96,11 +127,14 @@ export interface FoodLogEntry {
   servingUnit: ServingUnit;
   nutritionSnapshot: NutrientValues;
   mealType: MealType;
-  entrySource: "manual" | "saved_food" | "combination" | "photo" | "recommendation";
+  entrySource: EntrySource;
   confidence?: number | null;
   loggedAt: string; // ISO Date YYYY-MM-DD
   createdAt: string;
   updatedAt?: string;
+  combinationId?: string | null;
+  combinationName?: string | null;
+  itemsSnapshot?: { foodName: string; servingQuantity: number; servingUnit: ServingUnit }[];
 }
 
 export type SyncCollection = "foods" | "combinations" | "logs" | "profile" | "goals";

@@ -35,7 +35,7 @@ create table public.foods (
   brand text,
   category text not null default 'Custom',
   default_serving_quantity numeric not null check (default_serving_quantity > 0),
-  default_serving_unit text not null check (default_serving_unit in ('g','ml','piece','cup','tbsp','scoop')),
+  default_serving_unit text not null check (default_serving_unit in ('g','ml','piece','cup','tbsp','tsp','scoop','katori','bowl','ladle','glass','roti','idli','dosa','plate','slice','serving')),
   reference_type text not null check (reference_type in ('per_100g','per_100ml','per_serving')),
   reference_quantity numeric not null check (reference_quantity > 0),
   reference_unit text not null,
@@ -50,6 +50,16 @@ create table public.foods (
   updated_at timestamptz not null default now()
 );
 
+-- Indian household serving measures and volumetric conversions
+create table if not exists public.food_servings (
+  id uuid primary key default gen_random_uuid(),
+  food_id uuid not null references public.foods(id) on delete cascade,
+  unit_name text not null,
+  gram_equivalent numeric not null check (gram_equivalent > 0),
+  description text,
+  created_at timestamptz not null default now()
+);
+
 create table public.food_log_entries (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -59,7 +69,7 @@ create table public.food_log_entries (
   serving_unit text not null,
   nutrition_snapshot jsonb not null, -- frozen at log time; never recomputed from foods
   meal_type text not null check (meal_type in ('breakfast','lunch','dinner','snack')),
-  entry_source text not null check (entry_source in ('manual','saved_food','combination','photo','recommendation')),
+  entry_source text not null check (entry_source in ('manual','saved_food','combination','photo','recommendation','nlp')),
   confidence numeric check (confidence is null or (confidence >= 0 and confidence <= 1)),
   logged_at date not null, -- user's local calendar date
   created_at timestamptz not null default now()
@@ -100,11 +110,14 @@ alter table public.foods enable row level security;
 alter table public.food_log_entries enable row level security;
 alter table public.food_combinations enable row level security;
 alter table public.food_combination_items enable row level security;
+alter table public.food_servings enable row level security;
 alter table public.photo_analyses enable row level security;
 
 create policy "own profile" on public.profiles for all using (id = auth.uid()) with check (id = auth.uid());
 create policy "own goals" on public.nutrition_goals for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "own or shared foods readable" on public.foods for select using (owner_user_id is null or owner_user_id = auth.uid());
+create policy "own or shared food servings readable" on public.food_servings for select
+  using (exists (select 1 from public.foods f where f.id = food_id and (f.owner_user_id is null or f.owner_user_id = auth.uid())));
 create policy "own foods writable" on public.foods for insert with check (owner_user_id = auth.uid());
 create policy "own foods updatable" on public.foods for update using (owner_user_id = auth.uid()) with check (owner_user_id = auth.uid());
 create policy "own foods deletable" on public.foods for delete using (owner_user_id = auth.uid());

@@ -2,7 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { estimateNutritionByName } from "@/lib/nutrition/estimator";
 
-const ALLOWED_UNITS = ["g", "ml", "piece", "cup", "tbsp", "scoop"];
+const ALLOWED_UNITS = [
+  "g",
+  "ml",
+  "piece",
+  "cup",
+  "tbsp",
+  "tsp",
+  "scoop",
+  "katori",
+  "bowl",
+  "ladle",
+  "glass",
+  "roti",
+  "idli",
+  "dosa",
+  "plate",
+  "slice",
+  "serving",
+];
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB
 
 export async function POST(req: NextRequest) {
@@ -88,7 +106,7 @@ export async function POST(req: NextRequest) {
 
     const prompt = `Identify each food item in this meal${note ? ` (Note: "${note}")` : ""}.
 Return JSON ONLY:
-{"items":[{"foodName":"Exact Dish Name","estimatedQuantity":1,"estimatedUnit":"piece|g|ml|cup|tbsp|scoop","confidence":0.9,"clarifyingQuestion":null,"estimatedNutrients":{"protein":8.5,"calories":320,"carbohydrates":48,"totalFat":10.5,"saturatedFat":3.2,"fibre":3.5,"sugar":1.5,"sodium":420,"iron":2.1,"calcium":45,"zinc":0.9,"vitB12":0.1,"vitD":0,"folate":35,"healthyFats":4.0}}]}`;
+{"items":[{"foodName":"Exact Dish Name","estimatedQuantity":1,"estimatedUnit":"piece|g|ml|cup|tbsp|tsp|scoop|katori|bowl|ladle|glass|roti|idli|dosa|plate|slice|serving","confidence":0.9,"clarifyingQuestion":null,"estimatedNutrients":{"protein":8.5,"calories":320,"carbohydrates":48,"totalFat":10.5,"saturatedFat":3.2,"fibre":3.5,"sugar":1.5,"sodium":420,"iron":2.1,"calcium":45,"zinc":0.9,"vitB12":0.1,"vitD":0,"folate":35,"healthyFats":4.0}}]}`;
 
     for (const modelName of candidateModels) {
       try {

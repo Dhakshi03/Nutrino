@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { expandCombinationToEntries, localDateIso } from "@/lib/nutrition/combination";
+import { createCombinationLogEntry, localDateIso } from "@/lib/nutrition/combination";
 import { Navbar } from "@/components/navigation/Navbar";
 import { EatflixMark } from "@/components/navigation/EatflixLogo";
 import { AddFoodModal } from "@/components/dashboard/AddFoodModal";
@@ -42,6 +42,8 @@ import {
   Play,
   Film,
   Sparkles,
+  Mic,
+  Send,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -68,6 +70,20 @@ export default function HomePage() {
   const [activeMealForModal, setActiveMealForModal] = useState<MealType>("breakfast");
   const [isPhotoScannerOpen, setIsPhotoScannerOpen] = useState(false);
   const [showMicros, setShowMicros] = useState(false);
+
+  // Quick NLP bar state
+  const [quickLogInput, setQuickLogInput] = useState("");
+  const [quickLogInitialTab, setQuickLogInitialTab] = useState<"nlp" | undefined>(undefined);
+  const [quickLogNlpQuery, setQuickLogNlpQuery] = useState<string | undefined>(undefined);
+
+  const handleQuickLogSubmit = () => {
+    if (!quickLogInput.trim()) return;
+    setQuickLogNlpQuery(quickLogInput.trim());
+    setQuickLogInitialTab("nlp");
+    setActiveMealForModal("breakfast");
+    setIsAddModalOpen(true);
+    setQuickLogInput("");
+  };
 
   const loadData = async () => {
     await seedStarterDataIfEmpty();
@@ -139,15 +155,17 @@ export default function HomePage() {
   };
 
   const handleLogCombination = async (combo: FoodCombination, mealType: MealType) => {
-    const { entries } = expandCombinationToEntries(
+    const { entry } = createCombinationLogEntry(
       combo,
       allCatalogFoods,
       mealType,
       currentDateIso,
       profile?.id || "default_user"
     );
-    for (const e of entries) await saveFoodLogEntry(e);
-    await loadData();
+    if (entry) {
+      await saveFoodLogEntry(entry);
+      await loadData();
+    }
   };
 
   const handleDeleteEntry = async (id: string) => {
@@ -381,6 +399,47 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* QUICK LOG BAR — Natural Language Meal Entry */}
+        <section className="relative">
+          <div className="rounded-2xl border border-zinc-700/70 bg-zinc-900/80 backdrop-blur-md p-3 sm:p-4 flex items-center gap-3 shadow-xl">
+            <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-[#E50914]/15 border border-[#E50914]/30 flex items-center justify-center">
+              <Sparkles className="w-4 h-4 text-[#E50914]" />
+            </div>
+            <input
+              id="quick-log-input"
+              type="text"
+              value={quickLogInput}
+              onChange={(e) => setQuickLogInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleQuickLogSubmit()}
+              placeholder='Quick log: "2 idlis, 1 bowl sambar and a glass of milk"'
+              className="flex-1 bg-transparent text-sm text-white placeholder:text-zinc-500 focus:outline-none min-w-0"
+              aria-label="Quick log meal by typing"
+            />
+            {quickLogInput.trim() && (
+              <button
+                type="button"
+                onClick={handleQuickLogSubmit}
+                id="quick-log-submit"
+                className="flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#E50914] hover:bg-[#f40612] text-white font-bold text-xs shadow-lg shadow-[#E50914]/30 active:scale-95 transition-all"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Log</span>
+              </button>
+            )}
+            {!quickLogInput.trim() && (
+              <button
+                type="button"
+                onClick={() => { setActiveMealForModal("breakfast"); setIsAddModalOpen(true); }}
+                id="quick-log-open"
+                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold text-xs border border-zinc-700 transition-all"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Log Meal</span>
+              </button>
+            )}
+          </div>
+        </section>
+
         {/* ROW 1: CONTINUE EATING FOR YOU (Widescreen 16:9 Netflix Thumbnail Rail) */}
         {(todayLogs.length > 0 || combinations.length > 0) && (
           <section className="space-y-3">
@@ -588,9 +647,23 @@ export default function HomePage() {
                                 className="w-9 h-9 rounded-lg object-cover flex-shrink-0 border border-zinc-700"
                               />
                               <div className="min-w-0">
-                                <p className="font-semibold text-white truncate">{entry.foodNameSnapshot}</p>
-                                <p className="text-[10px] text-zinc-400">
-                                  {entry.servingQuantity} {entry.servingUnit}
+                                <div className="flex items-center gap-1.5">
+                                  <p className="font-semibold text-white truncate">{entry.foodNameSnapshot}</p>
+                                  {entry.entrySource === "combination" && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30 flex-shrink-0">
+                                      Combo
+                                    </span>
+                                  )}
+                                  {entry.entrySource === "nlp" && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold border border-emerald-500/25 flex-shrink-0">
+                                      ✨
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-zinc-400 truncate">
+                                  {entry.itemsSnapshot && entry.itemsSnapshot.length > 0
+                                    ? entry.itemsSnapshot.map((i) => `${i.servingQuantity} ${i.servingUnit} ${i.foodName}`).join(", ")
+                                    : `${entry.servingQuantity} ${entry.servingUnit}`}
                                 </p>
                               </div>
                             </div>
@@ -789,10 +862,16 @@ export default function HomePage() {
       {/* Modals */}
       <AddFoodModal
         isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setQuickLogInitialTab(undefined);
+          setQuickLogNlpQuery(undefined);
+        }}
         foods={foods}
         combinations={combinations}
         initialMeal={activeMealForModal}
+        initialTab={quickLogInitialTab}
+        initialNlpQuery={quickLogNlpQuery}
         onLogEntry={handleLogEntry}
         onLogCombination={handleLogCombination}
         onSaveCustomFood={handleSaveCustomFood}
