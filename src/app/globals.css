@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --nutrino-primary: #2E8B57;
+  --nutrino-deep: #174B35;
+  --nutrino-light: #E7F4E9;
+  --nutrino-bg: #FAFCF8;
+  --nutrino-surface: #FFFFFF;
+  --nutrino-sage: #A7C9A9;
+  --nutrino-accent: #F4D875;
+  --nutrino-text: #20352A;
+  --nutrino-muted: #718078;
+  --nutrino-border: #E5ECE5;
+  --nutrino-warning: #F2B84B;
+  --nutrino-error: #D97870;
+}
+
+body {
+  background-color: var(--nutrino-bg);
+  color: var(--nutrino-text);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom subtle scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #FAFCF8;
+}
+::-webkit-scrollbar-thumb {
+  background: #A7C9A9;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2E8B57;
+}
+

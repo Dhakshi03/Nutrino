@@ -3,15 +3,15 @@
 /.pnp
 .pnp.js
 
-# testing
-/coverage
-
 # next.js
 /.next/
 /out/
 
 # production
 /build
+
+# local runtime data
+/.nutrino-data/
 
 # misc
 .DS_Store
@@ -23,11 +23,8 @@ yarn-debug.log*
 yarn-error.log*
 
 # local env files
+.env*.local
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
 
 # vercel
 .vercel
